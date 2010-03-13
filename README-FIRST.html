@@ -1,0 +1,89 @@
+<html><body>
+Original: <a href=http://dl.dropbox.com/u/552/pyndexer/README-FIRST.html>http://dl.dropbox.com/u/552/pyndexer/README-FIRST.html</a><br/>
+<br/>
+<h3>Description of the script</h3>
+As it is now, public files are only public if you know the address of them.<br/>
+<br/>
+As a workaround, this script generates an index.html for a folder and all folders within, with the public links for all files inside.<br/>
+<br/>
+
+<h3>ChangeLog</h3>
+Read it on the script itself, or the <a href="pyndexer.html">pyndexer.html</a> auto-generated beautifully colored file :)<br/>
+As of now, it's in the <b>0.7</b> version, released in <b>2010-02-04</b>.
+
+<h3>License</h3>
+Copyleft. Feel free to copy, edit, and share your thoughts and patches ;)<br/>
+<br/>
+Dropbox Forum's discussion thread:
+<a href="http://forums.dropbox.com/topic.php?id=3075">http://forums.dropbox.com/topic.php?id=3075</a><br/>
+<br/>
+
+<h3>Install</h3>
+Windows (XP, Vista, 7):<br/>
+Download <a href="pyndexer.exe?dl">pyndexer.exe</a> if you do not have a python environment.
+Maybe you need MSVCR71.dll too, it is there to download if needed.<br/>
+There is also a <a href="pyndexer-nocrypto.exe?dl">nocrypto</a> version that is half the size
+if you do not want AES encryption support.<br/>
+<br/>
+Linux, OSX:<br/>
+Download the <a href="pyndexer.py?dl">pyndexer.py</a> script and set its permission to execute
+(chmod +x pyndexer.py or use your "explorer" thing).<br/>
+<br/>
+
+<h3>Usage</h3>
+<pre>
+pyndexer [args] [Folder1] [...] [FolderN]
+  Starts index creation on [Folder1] and others.
+  If no folder name given, defaults to Current Working Directory (CWD)
+Optional arguments:
+  -h --help          This help text
+  -v --verbose       Print indexed folders and files to be linked
+  -i --ignore        Ignore this file pattern (python's regex re.match)
+  -R --recursive     Index subfolders (default)
+  -N --nonrecursive  Index the specified folders only
+</pre>
+<br/>
+It is a terminal (console, text-only, white-on-black scary!) program!<br/>
+Run it from your favorite terminal (shell) program and pass to it the name of the
+folder you want to index as the first argument.  If no arguments are passed, it will
+index the Current Working Directory ($CWD) - the place from where you ran it.<br/>
+You can drag and drop a folder to the script to automatically "pass" it as the
+argument.<br/>
+<br/>
+If in windows (using the EXE version), you can make a place a shortcut to it on the
+special folder "Send To" (open explorer and go to "shell:sendto" to open it) so you
+can right-click some public folder, go to the Send To context menu and select pyndexer,
+and it will index it.<br/>
+<br/>
+
+<h3>Encryption</h3>
+pyndexer now supports AES-256-CBC encryption of the file listing, if you want to keep
+the files somewhat hidden.
+The EXE version includes the AES support, but if you use the script version, you will
+need <a href="http://chandlerproject.org/Projects/MeTooCrypto">M2Crypto</a> installed.
+Use apt-get or something else to install it, like:<br/>
+<pre>
+apt-get install python-m2crypto <i>(ubuntu)</i>
+easy_install m2crypto <i>(python's setuptools)</i>
+</pre>
+Just put a file named "encrypt.txt" on some folder and it will prompt you to
+provide a password for this folder's listing when indexing.<br/>
+It will <b>NOT</b> encrypt the files, just the links that point to them, so bewarned.
+Thanks to Vincent Cheung's <a href="http://www.vincentcheung.ca/jsencryption/">jsencript</a>
+the user's browser will decrypt it on-the-fly.<br/>
+<br/>
+
+<h3>WARNING: DEFAULTS TO WORK RECURSIVELY.</h3>
+Meaning it WILL overwrite ALL index.html files in the pointed folder and subfolders!<br/>
+Side note: You can always use the revisions feature of dropbox to revert a lost index.html.<br/>
+<br/>
+
+<h3>Bonus</h3>
+If you want to be able to listen to some MP3 on your public folder, go to the "playertest"
+subfolder and get the player.swf and swfobject.js files and put on the folder where the music files are.<br/>
+It will NOT make a whole MP3 library playable for you, it was <strong>deliberately</strong>
+done this way to be difficult to share your entire music with the world. Remember,
+<b>dropbox is NOT a content distribution system</b>!<br/>
+<br/>
+
+</body>
