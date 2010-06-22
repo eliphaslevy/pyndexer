@@ -1,0 +1,72 @@
+#sprite{background-image:(url:http://www.dropbox.com/static/89816/images/sprites/sprites.png)}
+body div#maindiv {
+	width:800px;
+	margin-left: auto;
+	margin-right: auto;
+  color:#444444;
+	font-family:"lucida grande","Segoe UI",arial,verdana,"lucida sans unicode",tahoma,sans-serif;
+	font-size:8pt;
+	font-weight:normal;
+}
+body div#maindiv table {
+	border:0px;
+	padding:2px;
+}
+
+img { border:0px; }
+
+#md5span { display:none; }
+
+#maintablebody {
+background:url("http://www.dropbox.com/static/images/skinny_dots.gif") repeat-x scroll 0 0 #FFFFFF;
+}
+
+a, a:visited { color:#1F75CC;
+	text-decoration:none;
+}
+a:hover, a:visited:hover {
+	color:#1F75CC;
+	text-decoration:underline;
+}
+
+hr {
+	size:1px;
+	color:#AACCEE;
+}
+
+tr#jwplayerrow th {
+	height: 24px;
+	text-align: center;
+}
+
+th, td {
+	font-size:12px;
+	text-align: left;
+  height:20px;
+}
+th#currentfolderth {
+	font-weight: normal;
+}
+
+th { color:#222222; }
+
+#maintablebody tr:hover { background-color:#F4F0FF; }
+td.row2, td.row3 { font-size:12px; font-family: monospace; }
+th.row1, td.row1 { width: 570px; }
+th.row2, td.row2 { width:  80px; text-align:right; }
+th.row3, td.row3 { width: 150px; text-align:right; }
+
+th#lastmodifiedth {
+	color: #AAAAAA;
+	font-size: 11px;
+	text-align: left;
+}
+p#foot_logo {
+	background:url("http://www.dropbox.com/static/images/gray_logo.gif") no-repeat scroll 0 0 transparent;
+	color:#AAAAAA;
+	float:right;
+	font-size:11px;
+	margin-right:7px;
+	padding:3px 0 3px 23px;
+	text-align:center;
+}
