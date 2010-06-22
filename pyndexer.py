@@ -1,20 +1,23 @@
 #!/usr/bin/env python
+# coding: utf-8
 #	pyndexer.py - Generates index.html recursively for a given directory
 #	Copyleft Eliphas Levy Theodoro
 #	This script was primarily made for use with the Public Folder
-#	feature of Dropbox - http://www.getdropbox.com
-#	See more information and get help at http://forums.getdropbox.com/topic.php?id=3075
-#	Some ideas/code got from AJ's version at http://dl.getdropbox.com/u/259928/www/indexerPY/index.html
+#	feature of Dropbox - http://www.dropbox.com
+#	See more information and get help at http://forums.dropbox.com/topic.php?id=3075
+#	Some ideas/code got from AJ's version at http://dl.dropbox.com/u/259928/www/indexerPY/index.html
 
-import getopt, re
-from os import path, getcwd, chdir, walk
-from sys import argv, exit
-from datetime import datetime as dt
-from locale import setlocale, strxfrm, LC_ALL
-setlocale(LC_ALL,"")
+version = "1.0ALPHA" # Request-for-comments ALPHA build!
 
-version = "0.7"
+helptext="""pyndexer - Python indexer for dropbox public folders
+  Creates index.html files for proper display of folder contents on a website. Usage:
+
+pyndexer [Folder1] [...] [FolderN]
+  Starts index creation on [Folder1] and others.
+  If no folder name given, will read configured sections on the INI file.
 """
+
+CHANGELOG="""
 ChangeLog
 2009-05-03.0.1
 	First try
@@ -42,183 +45,53 @@ ChangeLog
 2010-02-04.0.7
 	Added listing encryption (AES-256-CBC) support with javascript
 		http://www.vincentcheung.ca/jsencryption/
-"""
-
-### Mutable variables
-
-# Index file name
-indexFileName = "index.html"
-# Date format
-dateFormat = "%Y-%m-%d&nbsp;%H:%M"
-# If you want to NOT see the TOTAL directory size (including child dirs) in the dir entry, put False in here
-recurseDirSize = True
-# Do you want recursive diving into the subfolders by default?
-recursiveDirs = True
-# "Encrypt this folder" file trigger
-cryptTrigger = 'encrypt.txt'
-# Files ignored by default: index file itself, all files starting with dots (unix way to say "hidden")
-ignorePattern = [re.escape(indexFileName), re.escape(cryptTrigger), '\..*']
-# Files that will NOT have the ?dl (download, not display) suffix on links
-viewInBrowser = ['html','htm','txt','php']
-# Files to place the "play" radio button option
-jwPlayExts = ['mp3']
-# JWPlayer files to look for
-jwPlayerFiles = ['player.swf','swfobject.js']
-# JS encryption script
-aesScript = '<script type="text/javascript" src="http://www.vincentcheung.ca/jsencryption/jsencryption.js"></script>'
-
-#### Change this HTML to your needs. The "%(keyword)s" will be replaced by their respective values.
-
-# javascript to place when files of "playable" type are found
-htPlayerScript = """
-		<script type="text/javascript" src="swfobject.js"></script>
-		<script type="text/javascript">
-			function toggle(rad){
-				var song = rad.value;
-				var swf = new SWFObject('player.swf','player','400','24','9','#ffffff');
-				swf.addParam('allowfullscreen','false');
-				swf.addParam('allowscriptaccess','never');
-				swf.addParam('wmode','opaque');
-				swf.addVariable('file',song);
-				swf.addVariable('autostart','true');
-				swf.write('player');
-			}
-		</script>"""
-
-jsDecrypt = """
-			<TR><TD COLSPAN="3"><A HREF="javascript:decryptText('maindiv')">Show encrypted file listing</A></TD></TR>
-"""
-
-# htmlBase
-# accepts: {currentFolder} {playerScript} {aesScript} {aesCipher} {maincontents}
-htmlBase = """
-<HTML>
-	<HEAD>
-		<TITLE>Dropbox :: Folder listing :: %(currentFolder)s</TITLE>
-		<link rel="shortcut icon" href="http://www.getdropbox.com/static/1238803391/images/favicon.ico"/>
-		<link href="http://www.getdropbox.com/static/1241315492/css/sprites.css" rel="stylesheet" type="text/css" media="screen"/>
-		<style type="text/css"><!--
-			body, td { font-family:lucida grande, lucida sans unicode, verdana; font-size:12px; }
-			a               { color:#1F75CC; text-decoration:none; }
-			a:hover         { color:#1F75CC; text-decoration:underline; }
-			a:visited       { color:#1F75CC; text-decoration:none; }
-			a:visited:hover { color:#1F75CC; text-decoration:underline; }
-			#player { float: right; top: 10px; }
-			#dir:hover  { background-color:#D7ECFF; }
-			#file:hover { background-color:#D7ECFF; }
-			#sprite{background-image:(url:http://www.getdropbox.com/static/89816/images/sprites/sprites.png)}
-		--></style>
-		%(playerScript)s
-		%(aesScript)s
-	</HEAD>
-	<BODY><CENTER><DIV id="maindiv" title="%(aesCipher)s">
-		%(maincontents)s
-	</DIV></CENTER></BODY>
-</HTML>
-"""
-# accepts {currentFolder}
-tableStart = """
-		<TABLE BORDER="0" CELLSPACING="0" CELLPADDING="2" WIDTH="800">
-			<TR><TD colspan="3">
-				<DIV id="player"><!--replaced by js--></DIV>
-				<A HREF="http://www.getdropbox.com/">
-					<IMG BORDER="0" ALT="dropbox" SRC="http://www.getdropbox.com/static/images/main_logo.png">
-				</A>
-				<HR SIZE="1" COLOR="#C0C0C0">
-			</TD></TR>
-			<TR>
-				<TD><B>Contents of %(currentFolder)s:</B></TD>
-				<TD align="right"><B>Size</B></TD>
-				<TD align="right"><B>Date</B></TD>
-			</TR>
-"""
-# accepts {genDate} {genVersion}
-tableEnd = """
-			<TR><TD colspan="3"><HR SIZE="1" COLOR="#C0C0C0"></TD></TR>
-			<TR>
-				<TD>
-					<SPAN id=lastmodified><FONT COLOR="#808080">
-						Index file generated on %(genDate)s with
-						<A HREF="http://dl.getdropbox.com/u/552/pyndexer/index.html">pyndexer</A>
-						v.%(genVersion)s
-					</FONT></SPAN>
-				</TD>
-				<TD ALIGN="right" colspan=2>
-					<IMG BORDER="0" ALT="dropbox" SRC="http://www.getdropbox.com/static/images/gray_logo.gif">
-					<FONT COLOR="#808080">&copy; 2009 Dropbox</FONT>
-				</TD>
-			</TR>
-		</TABLE>
+2010-06-28.1.0 "mamooth version" ALPHA-TESTING
+	Major split up of things, some rewrite
+		External files for HTML, CSS, and javascript
+		Global configuration file
+		All command-line options dumped in favor of the config file
+		You should designate a proper folder for this script from now on!
+	Always non-recursive now, designate the folders to index in the config file
+	Sync up with some changes from Andrew's 0.8 version (see forum thread for his changes)
+	Will index all registered folders when called with no parameters
+	Added the jwplayer to play the 'playinbrowser' files, like mp3 and mp4
+	TODO:
+		wxwindow GUI on no parameters to ease preferences file edition
+		javascript sorting, like andrew's version, but I want it to be locale-aware!
+	Known issues:
+		item count for folders can give away that there is a hidden folder
 """
 
 
-
-# parentLink
-# used on child folders - the root folder do not provide this "up" link.
-# accepts: {indexFileName}
-htParentLink = """
-			<TR id="dir"><TD colspan="3">
-				<A HREF="../%(indexFileName)s">
-					<IMG BORDER="0" ALT="up" SRC="http://www.getdropbox.com/static/images/icons/icon_spacer.gif"
-						style="vertical-align:middle;" class="sprite s_arrow_turn_up" />
-					Parent directory
-				</A>
-			</TD></TR>
-"""
-
-# directory row
-# accepts: {dirName} {dirSize} {dirDate}
-htDirRow = """
-			<TR id="dir">
-				<TD>
-					<A HREF="%(dirName)s/index.html">
-						<IMG BORDER="0" ALT="folder" SRC="http://www.getdropbox.com/static/images/icons/icon_spacer.gif"
-							style="vertical-align:middle;" class="sprite s_folder" />
-						%(dirName)s
-					</A>
-				</TD>
-				<TD align="right">%(dirSize)s</TD>
-				<TD align="right">%(dirDate)s</TD>
-			</TR>
-"""
-
-# static image of the file type
-# accepts: {fileType}
-htFileTypeImg = """<IMG BORDER="0" ALT="file" SRC="http://www.getdropbox.com/static/images/icons/icon_spacer.gif" style="vertical-align:middle;" class="sprite %(fileType)s" />"""
-
-# file to be played: radio button input
-# accepts: {fileName}
-htPlayerInput = """<input type="radio" name="playthis" title="Click to play" value="%(fileName)s" onclick="toggle(this)"/>"""
-
-# file row
-# accepts: {fileLink} {imgFile} {fileName} {radioButton} {fileSize} {fileDate}
-htFileRow = """
-			<TR id="file">
-				<TD><A HREF="%(fileLink)s">%(imgFile)s %(fileName)s</A>%(radioButton)s</TD>
-				<TD align="right">%(fileSize)s</TD>
-				<TD align="right">%(fileDate)s</TD>
-			</TR>
-"""
-
-# HTML ends here. From now on, the real script.
-
-### helper things
-
-# temporary file types dict for sprites
+# temporary file types dict for sprites - try to make it ordered by type, somewhat.
 fileTypes = {
-	('jpg', 'jpeg', 'jpe', 'ico', 'gif', 'png', 'bmp', 'psd', 'tif', 'tiff', 'cr2', 'crw', 'nef'):'s_page_white_picture',
+# web common
 	'pdf': 's_page_white_acrobat',
-	('doc', 'docx', 'odt', 'sxw', 'rtf', 'out'): 's_page_white_word',
 	'txt': 's_page_white_text',
+	('css', 'js', 'htm', 'html', 'xml'): 's_page_white_code',
+# images
+	('gif', 'jpg', 'jpeg', 'jpe', 'png'): 's_page_white_picture',
+	('ico', 'icns'): 's_page_white_picture',
+	('bmp', 'psd', 'tif', 'tiff', 'cr2', 'crw', 'nef'):'s_page_white_picture',
+# office
+	('doc', 'docx', 'odt', 'sxw', 'rtf', 'out'): 's_page_white_word',
 	('xls', 'ods', 'sxc', 'csv', 'uos'): 's_page_white_excel',
 	('ppt', 'odp', 'sxi', 'uop', 'keynote'): 's_page_white_powerpoint',
-	('xml', 'py', 'cmd', 'bat', 'html', 'htm'): 's_page_white_code',
-	'c': 's_page_white_c',
-	'php': '_php',
-	('rar', '7z', 'gz', 'bz2', 'tar', 'tgz'): 's_page_white_compressed',
-	'iso': 's_page_white_dvd',
-	('mp3', 'aac', 'wav', 'midi', 'flac', 'ogg', 'm4a', 'm4p', 'shn', 'aiff'): 's_page_white_sound',
+# script/languages
+	'java': 's_page_white_cup',
+	'php': 's_page_white_php',
+	'rb': 's_page_white_ruby',
+	('c','h'): 's_page_white_c',
+	('bat', 'cmd', 'py', 'pl', 'sh'): 's_page_white_code',
+# compressed
+	('7z', 'bz2', 'gz', 'rar', 'tar', 'tbz', 'tgz', 'zip'): 's_page_white_compressed',
+# audio/video
+	('aiff', 'aac', 'flac', 'm4a', 'midi', 'mp3', 'oga', 'ogg', 'shn', 'wav', 'wma'): 's_page_white_sound',
+	('avi', 'm4v', 'mp4', 'mpeg', 'mpg', 'ogv', 'mkv', 'mov', 'wmv'): 's_film',
+# others
+	('dmg', 'iso'): 's_page_white_dvd',
 	('dll', 'exe', 'com'): 's_page_white_gear',
+	None: 's_page_white',
 	}
 # on first run let's make the dict right
 for exts, desc in fileTypes.items():
@@ -227,205 +100,165 @@ for exts, desc in fileTypes.items():
 	del(fileTypes[exts])
 del desc, exts
 
-def ignoreThis(thisname):
-	for r in ignorePattern:
-		if re.match(r, thisname, re.IGNORECASE):
-			vprint('    ign:  %s' % thisname)
-			return True
-	return False
+import os, sys, codecs, ConfigParser
+from hashlib import md5
+from xml.dom import minidom
+from datetime import datetime as dt
+from locale import setlocale, strcoll, LC_ALL
+from urllib import urlopen
+from fnmatch import fnmatch
+import sqlite3
+from base64 import b64decode
+from pickle import loads
 
-def jwPlayThis(files):
-	r = False
-	# do we have files of the play type?
-	for f in files:
-		if path.splitext(f)[1][1:].lower() in jwPlayExts:
-			r = True
-			break
-	# ... but, are player files around?
-	for f in jwPlayerFiles:
-		if f not in files:
-			r = False
-	return r
-
-def vprint(msg):
-	if verbose: print msg
-
-def HumanSize(bytes):
-	"""Humanize a given byte size"""
-	if bytes/1024/1024:
-		return "%.2f&nbsp;MB" % round(bytes/1024/1024.0,2)
-	elif bytes/1024:
-		return "%d&nbsp;KB" % round(bytes/1024.0)
-	else:
-		return "%d&nbsp;B&nbsp;&nbsp;" % bytes
-
-def Usage():
-	me = path.basename(argv[0])
-	recdefaults = ('(default)','')
-	if not recursiveDirs:
-		recdefaults = ('','(default)')
-	print """%s
-  Creates index.html files for proper display of folder contents on a website.
-
-Usage: %s [args] [Folder1] [...] [FolderN]
-  Starts index creation on [Folder1] and others.
-  If no folder name given, defaults to Current Working Directory (CWD)
-""" % (me, me)
-	print """Optional arguments:
-  -h --help          This help text
-  -v --verbose       Print indexed folders and files to be linked
-  -i --ignore        Ignore this file pattern (python's regex re.match)
-  -R --recursive     Index subfolders %s
-  -N --nonrecursive  Index the specified folders only %s
-""" % recdefaults
-	raw_input("Press <ENTER> to exit...")
-	exit(1)
-
-### The function that actually does the job
-
-def index(dirname):
-	chdir(dirname)
-	# we will use this dict to know the real directory sizes of all the tree (even including subdirs!)
-	dirSizes = {}
-	rootDir = getcwd()
-	for curDir, dirs, files in walk(rootDir, topdown=not recursiveDirs):
-		# indexed count
-		indexedFiles, indexedDirs = 0, 0
-
-		# sort by locale
-		dirs.sort(key = lambda k: strxfrm( k ) )
-		files.sort(key = lambda k: strxfrm( k ) )
-
-		# calculate disk usage for this directory - caveat: the new index.html size will not count :)
-		dirSizes[curDir] = dirSizes.get(curDir, 0) + sum([path.getsize(path.join(curDir,f)) for f in files])
-
-		# generate index for this dir
-		print('\nINFO: indexing "%s" (%s)' % (curDir, HumanSize(dirSizes[curDir]).replace('&nbsp;','')))
-
-		# temp index file string
-		fileIndex = ""
-
-		# header and footer dicts
-		htmlBaseDict = dict(
-			currentFolder = path.basename(curDir),
-			playerScript = '',
-			aesScript = '',
-			aesCipher = 'maindiv',
-			maincontents = '',
-			genDate = dt.now().strftime(dateFormat),
-			genVersion = version,
-		)
-
-		# put player script if file requirements are met
-		playableFolder = False
-		if jwPlayThis(files):
-			htmlBaseDict['playerScript'] = htPlayerScript
-			playableFolder = True
-		htmlBaseDict['playerScript'] = htPlayerScript
-
-		# verify if we need to provide a parent link
-		if not curDir == rootDir:
-			vprint('    link: parent folder')
-			fileIndex += htParentLink % {'indexFileName':indexFileName}
-
-		# write folder links
-		if recursiveDirs:
-			for dirName in dirs:
-				if ignoreThis(dirName): continue # jump ignored files
-				fullDirName = path.join(curDir, dirName)
-				fullDirDate = dt.fromtimestamp(path.getmtime(fullDirName)).strftime(dateFormat)
-				d = { 'dirName': dirName, 'dirSize': HumanSize(dirSizes[fullDirName]), 'dirDate': fullDirDate}
-				fileIndex += htDirRow % d
-				vprint('    dir:  %s' % dirName)
-				indexedDirs+=1
-
-		# write file links
-		for fileName in files:
-			if ignoreThis(fileName): continue # jump ignored files
-			fileExt = path.splitext(fileName)[1][1:].lower()
-			fileLink = fileName
-			if not fileExt in viewInBrowser:
-				fileLink = '%s?dl' % fileName
-			fullFileName = path.join(curDir, fileName)
-			fullFileDate = dt.fromtimestamp(path.getmtime(fullFileName)).strftime(dateFormat)
-			imgFile = htFileTypeImg % { 'fileType': fileTypes.get(path.splitext(fileName)[-1][1:].lower(),'s_page_white') }
-			d = {   'fileLink': fileLink, 'imgFile': imgFile, 'fileName': fileName, 'radioButton': '',
-				'fileSize': HumanSize(path.getsize(fullFileName)), 'fileDate': fullFileDate }
-			if playableFolder and fileExt in jwPlayExts:
-				d['radioButton'] = htPlayerInput % {'fileName': fileName}
-			fileIndex += htFileRow % d
-			vprint('    file: %s' % fileName)
-			indexedFiles+=1
-
-		# Show indexed file count
-		print('    total:   %d dirs, %d files' % (len(dirs), len(files)))
-		print('    indexed: %d dirs, %d files' % (indexedDirs, indexedFiles))
-
-		# Constructing index file, without encryption first
-		htmlBaseDict['maincontents'] = tableStart % htmlBaseDict + fileIndex + tableEnd % htmlBaseDict
-		htmlContents = htmlBase % htmlBaseDict
-		# XXX Unfortunately, we can't decrypt the file first without bugging the user,
-		#     so will encrypted listings will always need to be remade. Any toughts?
-
-		# see if we really need to write the new index file
-		writeIndex = True
-		if indexFileName in files:
-			oldIndex = file(path.join(curDir, indexFileName)).read()
-			# remove gen.date and version
-			reg = re.compile('<SPAN id=lastmodified>.*?</SPAN>',re.DOTALL)
-			oldIndex = re.sub(reg, '', oldIndex)
-			newIndex = re.sub(reg, '', htmlContents)
-			if oldIndex == newIndex:
-				writeIndex = False
-				print('    info:    listing not changed, no need to update')
-			del oldIndex, newIndex
-
-		if writeIndex and hascrypto and cryptTrigger in files:
-			print('    info:    encryption file found, will encrypt listing.')
-			password, password2 = '1','2'
-			while 1:
-				password  = raw_input('*** give password for encryption:\n    ')
-				password2 = raw_input('*** confirm:\n    ')
-				if password == password2: break
-				print('WARN: passwords did not match, do it again.')
-			ciphertext = encrypt(htmlBaseDict['maincontents'], password)
-			htmlBaseDict['aesScript'] = aesScript
-			htmlBaseDict['aesCipher'] = '\n'.join(wrap(ciphertext, 64))
-			htmlBaseDict['maincontents'] = tableStart % htmlBaseDict + jsDecrypt + tableEnd % htmlBaseDict
-			htmlContents = htmlBase % htmlBaseDict
-
-		if writeIndex:
-			htIndexFile = file(path.join(curDir, indexFileName),"w")
-			htIndexFile.write(htmlContents)
-			htIndexFile.close()
-
-		# get real full directory usage:
-		# the trick here is having the walk function be called from bottom up, so the subdirs get calculated first
-		if recurseDirSize and curDir != rootDir: # climb up tree adding sizes to parents
-			curDirSize = dirSizes[curDir]
-			while curDir != rootDir: # no do...while in python led me to reuse curDir here :(
-				curDir = path.dirname(curDir)
-				dirSizes[curDir] = dirSizes.get(curDir, 0) + curDirSize
-
-		# jump off the loop if not recursive
-		if not recursiveDirs: break
-
+hascrypto=False
 try:
 	from M2Crypto import EVP
-	from os import urandom
-	from hashlib import md5
 	from cStringIO import StringIO
 	from textwrap import wrap
 	hascrypto = True
 except ImportError:
 	print('INFO: no M2Crypto support detected')
-	hascrypto = False
+
+# On windows command line, python <=2.5 will not handle unicode correctly. This works around this.
+def GetArgv():
+	'''code adapted from http://code.activestate.com/recipes/572200/'''
+	if sys.platform != 'win32':
+		return sys.argv
+	else:
+		from ctypes import POINTER, byref, cdll, c_int, windll
+		from ctypes.wintypes import LPCWSTR, LPWSTR
+		GetCommandLineW = cdll.kernel32.GetCommandLineW
+		GetCommandLineW.argtypes = []
+		GetCommandLineW.restype = LPCWSTR
+		CommandLineToArgvW = windll.shell32.CommandLineToArgvW
+		CommandLineToArgvW.argtypes = [LPCWSTR, POINTER(c_int)]
+		CommandLineToArgvW.restype = POINTER(LPWSTR)
+		cmd = GetCommandLineW()
+		argc = c_int(0)
+		argv = CommandLineToArgvW(cmd, byref(argc))
+		if argc.value > 0:
+				if argc.value - len(sys.argv) == 1:
+						start = 1
+				else:
+						start = 0
+				return [argv[i] for i in xrange(start, argc.value)]
+		else:
+				return []
+
+# dropbox path finder borrowed from my pyDropConflicts
+def GetDbFolder():
+	if sys.platform == 'win32':
+		assert os.environ.has_key('APPDATA'), Exception('APPDATA env variable not found')
+		dbpath = os.path.join(os.environ['APPDATA'],'Dropbox')
+	elif sys.platform in ('linux2','darwin'):
+		assert os.environ.has_key('HOME'), Exception('HOME env variable not found')
+		dbpath = os.path.join(os.environ['HOME'],'.dropbox')
+	else: # FIXME other archs?
+		raise Exception('platform %s not known, please report' % sys.platform)
+	print "Locating dropbox's database (%s)" % sys.platform
+	if os.path.isfile(os.path.join(dbpath,'config.db')):
+		dbfn, dbfnver = os.path.join(dbpath,'config.db'), 2
+	elif os.path.isfile(os.path.join(dbpath, 'dropbox.db')):
+		dbfn, dbfnver = os.path.join(dbpath,'dropbox.db'), 1
+	else:
+		raise Exception('Dropbox database not found, is dropbox installed?')
+	dbpath, dbfile = os.path.dirname(dbfn), os.path.basename(dbfn)
+
+	print 'Reading dropbox database'
+	lastdir = os.getcwd()
+	os.chdir(dbpath)
+	connection = sqlite3.connect(dbfile, isolation_level=None)
+	os.chdir(lastdir)
+	cursor = connection.cursor()
+	cursor.execute('SELECT value FROM config WHERE key="dropbox_path"')
+	row = cursor.fetchone()
+	cursor.close()
+	connection.close()
+	print 'Done reading database'
+	if row is None:
+		if sys.platform == 'win32':
+			import ctypes
+			dll = ctypes.windll.shell32
+			buf = ctypes.create_string_buffer(300)
+			dll.SHGetSpecialFolderPathA(None, buf, 0x0005, False)
+			dbfolder = os.path.join(buf.value,'My Dropbox')
+		elif sys.platform in ('linux2','darwin'):
+			dbfolder = os.path.join(os.environ['HOME'],'Dropbox')
+		else:
+			raise Exception('platform %s not known, please report' % sys.platform)
+		print 'No dropbox path defined in config, using default location %s' % dbfolder
+		return dbfolder
+	else:
+		if dbfnver == 1:
+			return loads(b64decode(row[0]))
+		elif dbfnver == 2:
+			return row[0]
+		else:
+			raise Exception('Dropbox database version not correctly identified?')
+
+
+def getElem(html,tag,tid=None,cls=None):
+	'''Gets an element by ID or class'''
+	for e in html.getElementsByTagName(tag):
+		if tid:
+			if e.getAttribute('id')==tid: return e
+		elif cls:
+			if e.getAttribute('class')==cls: return e
+		else:
+			return e
+	return None
+
+
+def delElem(e):
+	'''removes a dom child from the parent'''
+	e.parentNode.removeChild(e)
+	e.parentNode=None
+
+
+def setTextNodes(node,dic):
+	for e in node.childNodes:
+		if e.nodeType == e.TEXT_NODE:
+			e.replaceWholeText(e.wholeText % dic)
+
+
+def setEntryRow(tdata,dic):
+	for td in tdata:
+		if td.getAttribute('class') == u'row1':
+			a = td.getElementsByTagName('a')[0]
+			a.setAttribute('href', a.getAttribute('href') % dic)
+			setTextNodes(a, dic)
+			img = td.getElementsByTagName('img')[0]
+			img.setAttribute('class', img.getAttribute('class') % dic)
+		elif td.getAttribute('class') == u'row2':
+			setTextNodes(td, dic)
+		elif td.getAttribute('class') == u'row3':
+			setTextNodes(td, dic)
+
+
+def patmatch(somename, patlist): # magic!
+	return sum([fnmatch(somename, pat) and 1 or 0 for pat in patlist])
+
+
+def HumanSize(bytes):
+	'''Humanize a given byte size'''
+	if bytes/1024/1024/1024:
+		return "%.2f GB" % round(bytes/1024/1024/1024.0,2)
+	elif bytes/1024/1024:
+		return "%.2f MB" % round(bytes/1024/1024.0,2)
+	elif bytes/1024:
+		return "%d KB" % round(bytes/1024.0)
+	else:
+		return "%d bytes" % bytes
+
+
 def encrypt(string, password):
+	'''Encrypt with AES some string'''
 	prefix = 'Salted__'
-	salt = urandom(8)
+	salt = os.urandom(8)
 	hash = ['']
 	for i in range(4):
-		hash.append(md5(hash[i] + password + salt).digest() )
+		hash.append(md5(hash[i] + password.encode('ascii') + salt).digest() )
 	key, iv =  hash[1] + hash[2], hash[3] + hash[4]
 	del hash
 	cipher = EVP.Cipher(alg='aes_256_cbc', key=key, iv=iv, op=1)
@@ -440,39 +273,331 @@ def encrypt(string, password):
 	outb.close()
 	return (prefix+salt+ciphertext).encode('base64')
 
+
+def lsdir(config, dirname):
+	'''reads config, then list directories and files'''
+	# FIXME this should be tweaked, it's re-reading a default config everytime.
+	# at least these ones should not be needing to change based on folder
+	confdict = {}
+	allvars = (
+		# global vars
+		'my_source','pyndexer_url', 'dropbox_referrer','indexfilename','dateformat',
+		# local vars
+		'sortby','subdirsize','ignorepattern','viewinbrowser','playinbrowser','skipdir','password',
+		)
+	section = 'DEFAULT'
+	splitdirname = dirname.replace(config.get('DEFAULT','publicfolder'),'')
+	if splitdirname in config.sections():
+		section = splitdirname
+	for k in allvars:
+		if k == 'dateformat': # date format needs to be raw because of the percents
+			confdict[k] = config.get(section, k, 1).encode('ascii')
+		elif k in ('ignorepattern','viewinbrowser','playinbrowser'): # this is list
+			confdict[k] = [i.strip() for i in config.get(section, k).split(',')]
+		else:
+			confdict[k] = config.get(section, k)
+
+	dirs, files = [], {}
+	for name in os.listdir(dirname):
+		if patmatch(name, confdict['ignorepattern']):
+			continue # ignored folder/file
+		n = os.path.join(dirname, name)
+		if os.path.isdir(n):
+			# disabled because of recursivity... need sub folder counts :( FIXME
+			#if confdict[n]['skipdir'] == 'yes': continue # explicitly ignored folder
+			dirs.append(n)
+		elif os.path.islink(n) and os.path.isdir(os.path.realpath(n)):
+			# XXX will choke in infinite loops, be aware. (untested!)
+			dirs.append(os.path.abspath(os.path.realpath(n)))
+		elif os.path.isfile(n):
+			files[n]=dict(
+				size=os.path.getsize(n),
+				ctime=os.path.getmtime(n),
+				)
+		else:
+			raise Exception('Ouch, do not know what to do with "%s". Abort.' % name)
+	ctime = os.path.getmtime(dirname)
+	size = sum([files[f]['size'] for f in files])
+
+	return dict(confdict=confdict, ctime=ctime, size=size, count=len(dirs)+len(files), dirs=dirs, files=files)
+
+
+def walkdir(config, indexingdict, parent, dirname):
+	'''recursive list'''
+	if indexingdict.has_key(dirname): return
+	indexingdict[dirname] = lsdir(config, dirname)
+	indexingdict[dirname]['parent'] = parent
+	for subdir in indexingdict[dirname]['dirs']:
+		walkdir(config, indexingdict, dirname, subdir)
+		#XXX should I recursively add sizes and counts? (untested)
+		#indexingdict[dirname]['size'] += indexingdict[subdir]['size']
+		#indexingdict[dirname]['count'] += indexingdict[subdir]['count']
+
+
+def getNodesDict(htmlbase):
+	dic = {}
+	dic['jsenc'] = getElem(htmlbase, 'script', 'jsenc')
+	dic['encryptedrow'] = getElem(htmlbase, 'tr','encryptedrow')
+
+	dic['jsswfobj'] = getElem(htmlbase, 'script', 'jsswfobj')
+	dic['jsjwplay'] = getElem(htmlbase, 'script', 'jsjwplay')
+	dic['jwplayerrow'] = getElem(htmlbase, 'tr','jwplayerrow')
+	dic['playerdiv'] = getElem(htmlbase, 'span','playerdiv')
+
+	dic['md5span'] = getElem(htmlbase, 'span','md5span')
+
+	dic['title'] = getElem(htmlbase, 'title')
+	dic['dropboxref'] = getElem(htmlbase, 'a','dropboxref')
+	dic['currentfolderth'] = getElem(htmlbase, 'th','currentfolderth')
+	dic['lastmodifiedth'] = getElem(htmlbase, 'th','lastmodifiedth')
+	dic['pyndexerref'] = getElem(htmlbase, 'a','pyndexerref')
+
+	dic['updirtr'] = getElem(htmlbase, 'tr','updirtr')
+	dic['updirref'] = getElem(htmlbase, 'a','updirref')
+
+	dic['maintablebody'] = getElem(htmlbase, 'tbody','maintablebody')
+	dic['emptytr'] = getElem(htmlbase, 'tr','emptytr')
+	dic['direntry'] = getElem(htmlbase, 'tr',None,'direntry')
+	dic['fileentry'] = getElem(htmlbase, 'tr',None,'fileentry')
+	for k in dic:
+		if not dic[k]:
+			raise Exception('Ooops, html template not ok. (%s parse failed)' % k)
+	return dic
+
+
+def index(template, indexingdict, dirname):
+	'''write the index file.'''
+	'''globals needed: config'''
+	c = indexingdict[dirname]['confdict']
+	if c['skipdir'] != 'no':
+		return False
+	htmlbase = minidom.parse(template)
+	dic = getNodesDict(htmlbase)
+	# remove base html objects for folders and files
+	delElem(dic['emptytr'])
+	delElem(dic['direntry'])
+	delElem(dic['fileentry'])
+
+	dirs = indexingdict[dirname]['dirs']
+	files = indexingdict[dirname]['files']
+
+	if c['sortby'] == 'name':
+		dirnames  = sorted(dirs, cmp=strcoll)
+		filenames = sorted(files, cmp=strcoll)
+	elif c['sortby'] == 'size':
+		dirnames  = sorted(dirs,  key = lambda k: indexingdict[k]['size'] )
+		filenames = sorted(files, key = lambda k: files[k]['size'] )
+	elif c['sortby'] == 'date':
+		dirnames  = sorted(dirs,  key = lambda k: indexingdict[k]['ctime'] )
+		filenames = sorted(files, key = lambda k: files[k]['ctime'] )
+	else:
+		raise Exception('on folder %s: unknown sortby method' % dirname)
+
+	basedirname = os.path.basename(dirname)
+
+	dropboxref = c['dropbox_referrer']
+	dic['dropboxref'].setAttribute('href', dic['dropboxref'].getAttribute('href') % dict(dropboxref=dropboxref))
+
+	setTextNodes(dic['title'], dict(currentfolder=basedirname))
+	setTextNodes(dic['currentfolderth'].getElementsByTagName('b')[0], dict(currentfolder=basedirname))
+
+	parent = indexingdict[dirname]['parent']
+	if parent is None or indexingdict[parent]['confdict']['skipdir'] == 'yes':
+		dic['updirtr'].parentNode.removeChild(dic['updirtr'])
+		del(dic['updirtr'])
+	else:
+		setEntryRow(dic['updirtr'].getElementsByTagName('td'), dict(indexfilename=c['indexfilename']))
+
+	for subdirname in dirnames:
+		basesubdirname = os.path.basename(subdirname)
+		skipdir = indexingdict[subdirname]['confdict']['skipdir']
+		if skipdir == 'yes':
+			continue # FIXME counts of parent are skewed because of this :( - see other FIXME on lsdir
+			#Exception('Barf, skipdir==yes in index, should not happen. Report')
+		if skipdir != 'no': # just make a link to requested file
+			dirname_link = basesubdirname+'/'+skipdir
+		else: # recursive
+			dirname_link = basesubdirname+'/'+c['indexfilename']
+
+		if c['subdirsize'] == 'size':
+			size = HumanSize(indexingdict[subdirname]['size'])
+		elif c['subdirsize'] == 'count':
+			size = '%s items' % indexingdict[subdirname]['count']
+		ctime = dt.fromtimestamp(indexingdict[subdirname]['ctime']).strftime(c['dateformat'])
+		d = dict(
+			dirname_link=dirname_link,
+			dirname_text=basesubdirname,
+			dirsize=size,
+			dirdate=ctime,
+			)
+		newrow = htmlbase.importNode(dic['direntry'], True)
+		newrow = dic['maintablebody'].appendChild(newrow)
+		setEntryRow(newrow.getElementsByTagName('td'), d)
+
+	playfiles = 0
+	for filename in filenames:
+		basefilename = os.path.basename(filename)
+
+		size = HumanSize(files[filename]['size'])
+		ctime = dt.fromtimestamp(files[filename]['ctime']).strftime(c['dateformat'])
+		ftype = fileTypes.get(os.path.splitext(filename)[1].lstrip('.'), fileTypes[None])
+		if patmatch(basefilename, c['viewinbrowser']):
+			basefilenamelnk = basefilename
+		else:
+			basefilenamelnk = basefilename+'?dl'
+
+		d = dict(filename_link=basefilenamelnk, filename_text=basefilename, filename_type=ftype, filesize=size, filedate=ctime)
+		newrow = htmlbase.importNode(dic['fileentry'], True)
+		newrow = dic['maintablebody'].appendChild(newrow)
+		setEntryRow(newrow.getElementsByTagName('td'), d)
+
+		if patmatch(basefilename, c['playinbrowser']):
+			playfiles += 1
+			img = newrow.getElementsByTagName('img')[0]
+			audiolink="javascript:playthis(this, '%s');" % basefilename
+			img.setAttribute('onclick', audiolink)
+
+	if playfiles:
+		dic['playerdiv'].childNodes[0].replaceWholeText('Some media files can be played online, click on the file icon.')
+	else:
+		delElem(dic['jsswfobj'])
+		delElem(dic['jsjwplay'])
+		delElem(dic['jwplayerrow'])
+
+	if not getElem(htmlbase, 'tr', None, 'direntry') and not getElem(htmlbase, 'tr', None, 'fileentry'):
+		newrow = htmlbase.importNode(dic['emptytr'], True)
+		newrow = dic['maintablebody'].appendChild(newrow)
+
+	gendate = dt.now().strftime(c['dateformat'])
+	setTextNodes(dic['lastmodifiedth'], dict(gendate=gendate))
+	a = dic['pyndexerref']
+	a.setAttribute('href', a.getAttribute('href') % dict(pyndexer_url=c['pyndexer_url']))
+	setTextNodes(a, dict(pyndexer_ver=version))
+
+	tbodychildrenxml = ''
+	for child in dic['maintablebody'].getElementsByTagName('tr'):
+		if child.getAttribute('id') == 'encryptedrow': continue
+		tbodychildrenxml += child.toxml().encode('utf-8', 'xmlcharrefreplace')
+
+	if hascrypto and c['password'] != '':
+		for child in dic['maintablebody'].getElementsByTagName('tr'):
+			if child.getAttribute('id') == 'encryptedrow': continue
+			delElem(child)
+		for child in dic['maintablebody'].childNodes: # remove empty text
+			if child.nodeType == child.TEXT_NODE:
+				delElem(child)
+		ciphertext = encrypt(tbodychildrenxml, c['password'])
+		cipherwrap = '\n'.join(wrap(ciphertext, 64))
+		dic['maintablebody'].setAttribute('title', cipherwrap)
+	else:
+		dic['maintablebody'].removeAttribute('title')
+		delElem(dic['jsenc'])
+		delElem(dic['encryptedrow'])
+
+	# see if we really need to write the new index file.
+	# using md5 to 'compress' info wrote. if the same, no need to rewrite
+	# will add password on end of the md5 - (so will reindex on passwd change)
+	md5digest = md5(tbodychildrenxml + c['password']).hexdigest()
+	setTextNodes(dic['md5span'], dict(md5span=md5digest))
+
+	indexfilename = os.path.join(dirname,c['indexfilename'])
+	if os.path.isfile(indexfilename): # already there
+		try:
+			oldindex = minidom.parse(indexfilename)
+			oldmd5span = getElem(oldindex, 'span', 'md5span')
+			if oldmd5span:
+				oldmd5digest = oldmd5span.firstChild.wholeText
+				if md5digest == oldmd5digest: # wee, a disk write spared ;)
+					return False
+		except Exception: # uh, some problem parsing, or not generated by me, anyway, rewrite the index
+			pass
+	file(indexfilename,'wb').write(htmlbase.toxml().encode('utf-8', 'xmlcharrefreplace'))
+	return True
+
+
+def walkindex(template, indexingdict, dirname):
+	'''recursive indexing, stopping on ignored children'''
+	indexed = []
+	if index(template, indexingdict, dirname):
+		indexed.append(dirname)
+		for subdir in indexingdict[dirname]['dirs']:
+			indexed += walkindex(template, indexingdict, subdir)
+	return indexed
+
+
 # Execution
 if __name__ == "__main__":
-	# argument checking
-	try:
-		opts, dirnames = getopt.getopt(argv[1:], 'hvi:RN', ['help','verbose','ignore=','recursive','nonrecursive'])
-	except getopt.GetoptError, err:
-		print 'ERR:  ', str(err)
-		Usage()
+	setlocale(LC_ALL,"")
+	config = ConfigParser.SafeConfigParser()
+	# will use this as startup for my dependencies if not found in same dir as me
+	base_source = "http://dl.dropbox.com/u/552/pyndexer/1.0/"
+	argv = GetArgv()
 
-	verbose = True
-	for o, a in opts:
-		if o in ('-h','--help'):
-			Usage()
-		elif o in ('-v','--verbose'):
-			verbose = True
-			vprint('INFO: verbose mode set')
-		elif o in ('-i','--ignore'):
-			ignorePattern.append(a)
-			vprint('INFO: adding "%s" to ignore filter' % a)
-		elif o in ('-R','--recursive'):
-			recursiveDirs = True
-			vprint('INFO: recursive mode set')
-		elif o in ('-N','--nonrecursive'):
-			recursiveDirs = False
-			vprint('INFO: nonrecursive mode set')
+	mypath = os.path.abspath(os.path.dirname(argv[0]))
+	ini = os.path.join(mypath,'pyndexer.ini')
+	if not os.path.isfile(ini):
+		# FIXME should be less stubborn. I could have the defaults inside here.
+		# Anyway, we need the default template file, so...
+		print 'Downloading default INI file...'
+		file(ini,'wb').write(urlopen(base_source+'pyndexer.empty.ini').read())
+	print 'Reading config file %s' % ini
+	config.readfp(codecs.open(ini,'r','utf-8'))
+
+	template = os.path.join(mypath,'pyndexer.template.html')
+	if not os.path.isfile(template):
+		print 'Downloading default HTML template...'
+		file(template,'wb').write(urlopen(base_source+'pyndexer.template.html').read())
+
+	dbfolder = GetDbFolder()
+	assert os.path.isdir(dbfolder), Exception('Did not find Dropbox folder, please report')
+	publicfolder = os.path.join(dbfolder,'Public'+os.path.sep)
+	config.set('DEFAULT','publicfolder', publicfolder)
+
+	if len(argv) > 1:
+		dirnames = [ os.path.abspath(d) for d in argv[1:] ]
+	else:
+		# XXX: should open a GUI at some point in the future
+		try:
+			if config.sections():
+				print '\nWill process the following configured folders:'
+				for d in sorted(config.sections()):
+					print d
+				raw_input('\nPress ^C to cancel, or ENTER to confirm:')
+				dirnames = [ os.path.join(publicfolder, d) for d in sorted(config.sections()) ]
+			else:
+				raw_input('No configured folders found, ENTER to exit:')
+				sys.exit(1)
+		except KeyboardInterrupt:
+			sys.exit(1)
 	for d in dirnames:
-		if not path.isdir(d):
-			print "Invalid folder name: %s" % d
-			Usage()
-	if not dirnames:
-		print('WARN: No folder names given, will index:\n    "%s"' % getcwd())
-		dirnames.append(getcwd())
+		assert os.path.isdir(d), Exception(u'%s is not a folder' % d)
 
-
+	indexingdict = {}
+	indexed = []
+	print '\nStarting index\n'
 	for dirname in dirnames:
-		index(dirname)
+		fulldirname = os.path.abspath(dirname)
+		if fulldirname in indexed: continue
+		# W:walking, I:indexing, then OK or Ign (up-to-date or explicitly ignored)
+		print '%s: [' % dirname.replace(config.get('DEFAULT','publicfolder'),''),
+		try:
+			print 'W',
+			walkdir(config, indexingdict, None, fulldirname)
+			print 'I',
+			result = walkindex(template, indexingdict, fulldirname)
+			if result:
+				indexed += result
+				print 'OK ] (%d folders)' % len(result)
+			else:
+				print 'Ign ]'
+		except Exception, e:
+			print 'Exception raised, aborting:'
+			print e
+			raise
+	if indexed:
+		print '\nFinished. Folders indexed:'
+		for d in indexed: print d
+	else:
+		print '\nFinished. No folders where indexed (up-to-date or ignored).'
+	raw_input('Press ENTER to exit...')
+	# That's all folks!
