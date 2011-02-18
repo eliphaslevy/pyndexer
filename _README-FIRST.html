@@ -1,19 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
-<!-- This is valid XHTML1.0 Transitional! Keep it that way, the parser is very picky. -->
-<!-- For example, you must use the numeric representation for entities like &copy; :( -->
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/></head>
 <body>
 <h3>pyndexer - index your public folders (semi) automatically!</h3>
 
-Dropbox Forum's discussion thread:
-<a href="http://forums.dropbox.com/topic.php?id=3075">http://forums.dropbox.com/topic.php?id=3075</a><br/>
+Dropbox Forum's discussion thread: <a href="http://forums.dropbox.com/topic.php?id=3075">http://forums.dropbox.com/topic.php?id=3075</a><br/>
 <br/>
-This README is for the <b>1.0 version, NOT READY YET</b>, waiting for some brave forum guys to test and input,
-as of <b>2010-06-28</b>. Please stay tuned :)<br/>
-It is a given that this file and the script itself will change, so do not republish it, instead
-give feedback on the forum thread listed above.<br/>
+This README is for the <b>1.1.1 version</b>.<br/>
+If you do find any bugs, please give feedback on the forum thread listed above.<br/>
 <br/>
 
 <h3>Description of the script</h3>
@@ -37,76 +32,64 @@ See the <a href="index.html">index</a> to locate what you need to download.<br/>
 Windows (XP, Vista, 7):<br/>
 Download the EXE  if you do not have a
 python environment setup.<br/>
-Maybe you need MSVCR71.dll too, it is in the pyndexer root folder to download if needed.<br/>
+If the EXE does not run or gives you weird errors like <i>msvc<b>X</b>71.dll not found</i> or <i>EOFError while reading line</i>, you probably need to first download these two DLLs from <a href="http://dl.dropbox.com/u/552/msvc71/msvcp71.dll">here</a> and <a href="http://dl.dropbox.com/u/552/msvc71/msvcr71.dll">here</a>. <i>They are the Microsoft distributable visual c++ blah blah for MSVC7, and are not available on microsoft's site, at least I can't find a link to point you.</i> Put them in the same folder as the script.<br/>
+Check your antivirus too, maybe it is blocking the program - Already happened at least once.<br/>
 <br/>
-Linux, OSX:<br/>
+Linux, OSX, Windows with python environment:<br/>
 Download the PY script and set its permission to execute
 (chmod +x pyndexer.py or use your "explorer" thing).<br/>
+If you are online, the script will download a helper module called dbconfig.<br/>
+If you are off the internets, you will need to download <a href="http://dl.dropbox.com/u/552/dbconfig/index.html">(link)</a> it yourself. Place it in the same folder.<br/>
 <br/>
 
 <h3>Usage</h3>
 Download (if needed set it to execute!) and double click.<br/>
-It will download the <a href="pyndexer.template.html">template</a> HTML file, and then the sample
-<a href="pyndexer.empty.ini">pyndexer.ini</a> INI file (this is what I use to generate
-these indexes here) to the same folder as the script itself and will probably rant about
-no configured folders found. ;)<br/>
+It will download the <a href="pyndexer.template.html">template</a> HTML file, and then the sample <a href="pyndexer.empty.ini">pyndexer.empty.ini</a> INI file (will rename it to pyndexer.ini on save -- this is what I use to generate these indexes here) to the same folder as the script itself, and will probably rant about no configured folders found as they are all commented out. ;)<br/>
 <br/>
 Edit the pyndexer.ini as per the examples in the INI.<br/>
 <br/>
-Caveat: if you have unicode or accented (anything like "ümlauth" or "cachaça") named folders/files to
-be indexed, and you want to configure them on the INI, you have to edit the INI with an unicode-aware
-text editor (like <a href="http://notepad-plus-plus.org/">notepad++</a> - a nice editor!).<br/>
+Caveat: if you have unicode or accented (anything like "ümlauth" or "cachaça") named folders/files to be indexed, and you want to list them on the INI file, you have to edit it with an unicode-aware text editor (like <a href="http://notepad-plus-plus.org/">notepad++</a> - a nice editor!).<br/>
 As my tests indicate if you just have non-configured subfolders it will index them fine.<br/>
 <br/>
 <b>It is a terminal (console, text-only, white-on-black-scary!) program!</b><br/>
-Run it from your favorite terminal (shell) and pass to it the name of the
-folder/folders you want to index as arguments. It accepts no other things.
-If no arguments are passed, it will index the "Current Configured Folders"
-defined in the INI file.
+Run it from your favorite terminal (shell) and pass to it the name of the folder/folders you want to index as arguments. It accepts no other things.<br/>
+If no arguments are passed, it will index the "Current Configured Folders" defined in the INI file.<br/>
 You can drag and drop a folder to the script to automatically "pass" it as the
 argument.<br/>
 <br/>
 
 <h3>Template</h3>
-The first thing the script does is check for the <b>pyndexer.template.html</b> file
-and if not found it will <a href="pyndexer.template.html">download</a> it to the same folder
-where it is located. If you want, you can change it but keep in mind that it must be
-somewhat simplistic as the parser will bail in any syntax error for a XML/1.0 Transitional file.<br/>
+The first thing the script does is check for the <b>pyndexer.template.html</b> file and if not found it will <a href="pyndexer.template.html">download</a> it to the same folder where it is located. If you want, you can change it but keep in mind that I use a somewhat simplistic parser that will bail in any syntax error. Keep it conforming to the "XML/1.0 Transitional" standard to be safe.<br/>
 <br/>
 
 <h3>Online play of media files</h3>
-By default it uses my own template, which means that it will set as playable all MP3 and MP4 files
-it sees on the indexed folders. If you want to change it, change the template (and the
-<i>INI:playinbrowser</i> option) to remove/alter this functionality.<br/>
-The player was tested to work only on the same subdomain as the files, so if you aren't publishing
-your files from <b>dl.dropbox.com</b> (it's configured in the template and in the jwplay.js file),
-then you need to publish the dependencies yourself.<br/>
+By default it uses my own template, which means that it will set as playable all MP3 and MP4 files it sees on the indexed folders. If you want to change it, change the template (and the <i>INI:playinbrowser</i> option) to remove/alter this functionality.<br/>
+The player was tested to work only on the same subdomain as the files, so if you aren't publishing your files from <b>dl.dropbox.com</b> (it's configured in the template and in the jwplay.js file), then you need to publish the dependencies yourself.<br/>
 <br/>
 
 <h3>Encryption</h3>
-The EXE version includes the AES support, but if you use the script version, you will need
-<a href="http://chandlerproject.org/Projects/MeTooCrypto">M2Crypto</a> installed.
+The EXE version includes the AES support, but if you use the script version, you will need <a href="http://chandlerproject.org/Projects/MeTooCrypto">M2Crypto</a> installed.<br/>
 Use apt-get or something else to install it, like:<br/>
 <pre>
 apt-get install python-m2crypto <i>(ubuntu)</i>
 easy_install m2crypto <i>(python's setuptools)</i>
 </pre>
-Then just set the <i>INI:password</i> option. Keep in mind that it is not magical, and will
-<b>NOT</b> encrypt the files, just the links in the HTML index that point to them.<br/>
-Thanks to Vincent Cheung's <a href="http://www.vincentcheung.ca/jsencryption/">jsencript</a>
-the user's browser will decrypt it on-the-fly.<br/>
+Then just set the <i>INI:password</i> option. Keep in mind that it is not magical, and will <b>NOT</b> encrypt the files, just the links in the HTML index that point to them.<br/>
+Thanks to Vincent Cheung's <a href="http://www.vincentcheung.ca/jsencryption/">jsencript</a>, the user's browser will decrypt it on-the-fly.<br/>
 <br/>
 
 <h3>WARNING: DEFAULTS TO WORK RECURSIVELY.</h3>
-Meaning it <b>WILL overwrite ALL index.html</b> files in the configured folders and subfolders, <b>if you do not specify the <i>INI:skipdir=yes</i></b>.<br/>
+Meaning it <b>WILL overwrite ALL index.html</b> files in the configured folders and subfolders, <b>if you do not specify the <i>INI:skipdir=yes</i></b> for the ones you want to protect.<br/>
+Note: <i>you can use skipdir=index.html if you want the script to just put a link to them in the parent listing.</i><br/>
 <br/>
 Side note: You can always use the revisions feature of dropbox to revert a lost index.html.<br/>
 <br/>
 
 <h3>Remember, Dropbox is NOT a content distribution system.</h3>
 
-Original: <a href="http://dl.dropbox.com/u/552/pyndexer/1.0/_README-FIRST.html">http://dl.dropbox.com/u/552/pyndexer/1.0/_README-FIRST.html</a><br/>
-The pyndexer scripts: <a href="http://dl.dropbox.com/u/552/pyndexer/index.html">http://dl.dropbox.com/u/552/pyndexer/index.html</a><br/>
+Original: <a href="http://dl.dropbox.com/u/552/pyndexer/1.1/_README-FIRST.html">http://dl.dropbox.com/u/552/pyndexer/1.1/_README-FIRST.html</a><br/>
+Other versions of pyndexer scripts: <a href="http://dl.dropbox.com/u/552/pyndexer/index.html">http://dl.dropbox.com/u/552/pyndexer/index.html</a><br/>
+The pyndexer discussion thread on dropbox forums: <a href="http://forums.dropbox.com/topic.php?id=3075">http://forums.dropbox.com/topic.php?id=3075</a><br/>
 <br/>
 EOF
 </body>

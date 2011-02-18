@@ -1,21 +1,25 @@
 #!/usr/bin/env python
 # coding: utf-8
+# vim:foldmethod=indent:ai:ts=4:sw=4
 #	pyndexer.py - Generates index.html recursively for a given directory
 #	Copyleft Eliphas Levy Theodoro
+#	http://www.opensource.org/licenses/simpl-2.0.html
 #	This script was primarily made for use with the Public Folder
 #	feature of Dropbox - http://www.dropbox.com
 #	See more information and get help at http://forums.dropbox.com/topic.php?id=3075
 #	Some ideas/code got from AJ's version at http://dl.dropbox.com/u/259928/www/indexerPY/index.html
 
-version = "1.0ALPHA" # Request-for-comments ALPHA build!
+version=(1,1,1)
+base_source = "http://dl.dropbox.com/u/552/pyndexer/%d.%d/" % version[:2]
 
-helptext="""pyndexer - Python indexer for dropbox public folders
-  Creates index.html files for proper display of folder contents on a website. Usage:
+helptext='''pyndexer version %d.%d build %d
 
+This script generates an index html file for dropbox public folders
+Usage:
 pyndexer [Folder1] [...] [FolderN]
   Starts index creation on [Folder1] and others.
   If no folder name given, will read configured sections on the INI file.
-"""
+'''
 
 CHANGELOG="""
 ChangeLog
@@ -45,7 +49,7 @@ ChangeLog
 2010-02-04.0.7
 	Added listing encryption (AES-256-CBC) support with javascript
 		http://www.vincentcheung.ca/jsencryption/
-2010-06-28.1.0 "mamooth version" ALPHA-TESTING
+2010-06-28.1.0 "mamooth version"
 	Major split up of things, some rewrite
 		External files for HTML, CSS, and javascript
 		Global configuration file
@@ -55,11 +59,23 @@ ChangeLog
 	Sync up with some changes from Andrew's 0.8 version (see forum thread for his changes)
 	Will index all registered folders when called with no parameters
 	Added the jwplayer to play the 'playinbrowser' files, like mp3 and mp4
+	Changes after first release:
+		2010-07-08 Added utf8 decode first thing, a little bug on decoding argv on linux
+		2010-07-14 Fix for windows config, now will use forward slash even on win32
 	TODO:
 		wxwindow GUI on no parameters to ease preferences file edition
 		javascript sorting, like andrew's version, but I want it to be locale-aware!
 	Known issues:
 		item count for folders can give away that there is a hidden folder
+2011-01-04.1.0.1
+	Move dropbox config database-related commands to a module (dbconfig.py)
+		This is now a DEPENDENCY to the script (it will try to download itself).
+		It fixes a potential bug regarding the changed default folder name on windows.
+	Added reading a "readme" text/html file into the main index file.
+2011-02-18.1.1.1
+	This is what I should have done with 1.0.1, new minor version :)
+	Just to add some icon extensions missing
+	Now the exe version does not need to download dbconfig module, embedded
 """
 
 
@@ -75,8 +91,8 @@ fileTypes = {
 	('bmp', 'psd', 'tif', 'tiff', 'cr2', 'crw', 'nef'):'s_page_white_picture',
 # office
 	('doc', 'docx', 'odt', 'sxw', 'rtf', 'out'): 's_page_white_word',
-	('xls', 'ods', 'sxc', 'csv', 'uos'): 's_page_white_excel',
-	('ppt', 'odp', 'sxi', 'uop', 'keynote'): 's_page_white_powerpoint',
+	('xls', 'xlsx', 'ods', 'sxc', 'csv', 'uos'): 's_page_white_excel',
+	('ppt', 'pptx', 'pps', 'ppsx', 'odp', 'sxi', 'uop', 'keynote'): 's_page_white_powerpoint',
 # script/languages
 	'java': 's_page_white_cup',
 	'php': 's_page_white_php',
@@ -84,9 +100,9 @@ fileTypes = {
 	('c','h'): 's_page_white_c',
 	('bat', 'cmd', 'py', 'pl', 'sh'): 's_page_white_code',
 # compressed
-	('7z', 'bz2', 'gz', 'rar', 'tar', 'tbz', 'tgz', 'zip'): 's_page_white_compressed',
+	('7z', 'ace', 'arj', 'bz2', 'gz', 'rar', 'tar', 'tbz', 'tgz', 'zip'): 's_page_white_compressed',
 # audio/video
-	('aiff', 'aac', 'flac', 'm4a', 'midi', 'mp3', 'oga', 'ogg', 'shn', 'wav', 'wma'): 's_page_white_sound',
+	('aiff', 'aac', 'flac', 'kar', 'm4a', 'mid', 'midi', 'mp3', 'oga', 'ogg', 'shn', 'wav', 'wma'): 's_page_white_sound',
 	('avi', 'm4v', 'mp4', 'mpeg', 'mpg', 'ogv', 'mkv', 'mov', 'wmv'): 's_film',
 # others
 	('dmg', 'iso'): 's_page_white_dvd',
@@ -107,9 +123,25 @@ from datetime import datetime as dt
 from locale import setlocale, strcoll, LC_ALL
 from urllib import urlopen
 from fnmatch import fnmatch
-import sqlite3
-from base64 import b64decode
-from pickle import loads
+
+try:
+	import dbconfig
+except ImportError:
+	mod_name = 'dbconfig.py'
+	mod_source = "http://dl.dropbox.com/u/552/dbconfig/"
+	print 'I will try to download dbconfig.py for you, ok?\n(will save on this script folder)'
+	r = raw_input('[Y/n] and ENTER:').lower().strip()
+	if r not in ('y',''):
+		print 'Exiting.'
+		sys.exit(1)
+	dbc = os.path.join(os.path.dirname(sys.argv[0]), mod_name)
+	try:
+		file(dbc,'wb').write(urlopen(mod_source+mod_name).read())
+		import dbconfig
+	except:
+		print('ERROR: %s module not found. Download to same place as this script.' % mod_name)
+		print('URL: '+mod_source+'index.html')
+		raise
 
 hascrypto=False
 try:
@@ -119,6 +151,7 @@ try:
 	hascrypto = True
 except ImportError:
 	print('INFO: no M2Crypto support detected')
+
 
 # On windows command line, python <=2.5 will not handle unicode correctly. This works around this.
 def GetArgv():
@@ -145,57 +178,6 @@ def GetArgv():
 				return [argv[i] for i in xrange(start, argc.value)]
 		else:
 				return []
-
-# dropbox path finder borrowed from my pyDropConflicts
-def GetDbFolder():
-	if sys.platform == 'win32':
-		assert os.environ.has_key('APPDATA'), Exception('APPDATA env variable not found')
-		dbpath = os.path.join(os.environ['APPDATA'],'Dropbox')
-	elif sys.platform in ('linux2','darwin'):
-		assert os.environ.has_key('HOME'), Exception('HOME env variable not found')
-		dbpath = os.path.join(os.environ['HOME'],'.dropbox')
-	else: # FIXME other archs?
-		raise Exception('platform %s not known, please report' % sys.platform)
-	print "Locating dropbox's database (%s)" % sys.platform
-	if os.path.isfile(os.path.join(dbpath,'config.db')):
-		dbfn, dbfnver = os.path.join(dbpath,'config.db'), 2
-	elif os.path.isfile(os.path.join(dbpath, 'dropbox.db')):
-		dbfn, dbfnver = os.path.join(dbpath,'dropbox.db'), 1
-	else:
-		raise Exception('Dropbox database not found, is dropbox installed?')
-	dbpath, dbfile = os.path.dirname(dbfn), os.path.basename(dbfn)
-
-	print 'Reading dropbox database'
-	lastdir = os.getcwd()
-	os.chdir(dbpath)
-	connection = sqlite3.connect(dbfile, isolation_level=None)
-	os.chdir(lastdir)
-	cursor = connection.cursor()
-	cursor.execute('SELECT value FROM config WHERE key="dropbox_path"')
-	row = cursor.fetchone()
-	cursor.close()
-	connection.close()
-	print 'Done reading database'
-	if row is None:
-		if sys.platform == 'win32':
-			import ctypes
-			dll = ctypes.windll.shell32
-			buf = ctypes.create_string_buffer(300)
-			dll.SHGetSpecialFolderPathA(None, buf, 0x0005, False)
-			dbfolder = os.path.join(buf.value,'My Dropbox')
-		elif sys.platform in ('linux2','darwin'):
-			dbfolder = os.path.join(os.environ['HOME'],'Dropbox')
-		else:
-			raise Exception('platform %s not known, please report' % sys.platform)
-		print 'No dropbox path defined in config, using default location %s' % dbfolder
-		return dbfolder
-	else:
-		if dbfnver == 1:
-			return loads(b64decode(row[0]))
-		elif dbfnver == 2:
-			return row[0]
-		else:
-			raise Exception('Dropbox database version not correctly identified?')
 
 
 def getElem(html,tag,tid=None,cls=None):
@@ -283,10 +265,13 @@ def lsdir(config, dirname):
 		# global vars
 		'my_source','pyndexer_url', 'dropbox_referrer','indexfilename','dateformat',
 		# local vars
-		'sortby','subdirsize','ignorepattern','viewinbrowser','playinbrowser','skipdir','password',
+		'sortby','subdirsize','ignorepattern','viewinbrowser','playinbrowser','skipdir','password','readme',
 		)
 	section = 'DEFAULT'
-	splitdirname = dirname.replace(config.get('DEFAULT','publicfolder'),'')
+	splitdirname = dirname.replace(config.get(section,'publicfolder'),'')
+	# fix for windows
+	if sys.platform == 'win32':
+		splitdirname = splitdirname.replace('\\','/')
 	if splitdirname in config.sections():
 		section = splitdirname
 	for k in allvars:
@@ -359,6 +344,8 @@ def getNodesDict(htmlbase):
 	dic['emptytr'] = getElem(htmlbase, 'tr','emptytr')
 	dic['direntry'] = getElem(htmlbase, 'tr',None,'direntry')
 	dic['fileentry'] = getElem(htmlbase, 'tr',None,'fileentry')
+
+	dic['readme'] = getElem(htmlbase, 'div', 'readme')
 	for k in dic:
 		if not dic[k]:
 			raise Exception('Ooops, html template not ok. (%s parse failed)' % k)
@@ -369,7 +356,7 @@ def index(template, indexingdict, dirname):
 	'''write the index file.'''
 	'''globals needed: config'''
 	c = indexingdict[dirname]['confdict']
-	if c['skipdir'] != 'no':
+	if not c['skipdir'] == 'no': # will not index this folder!
 		return False
 	htmlbase = minidom.parse(template)
 	dic = getNodesDict(htmlbase)
@@ -414,7 +401,7 @@ def index(template, indexingdict, dirname):
 		if skipdir == 'yes':
 			continue # FIXME counts of parent are skewed because of this :( - see other FIXME on lsdir
 			#Exception('Barf, skipdir==yes in index, should not happen. Report')
-		if skipdir != 'no': # just make a link to requested file
+		elif skipdir != 'no': # just make a link to requested file
 			dirname_link = basesubdirname+'/'+skipdir
 		else: # recursive
 			dirname_link = basesubdirname+'/'+c['indexfilename']
@@ -472,7 +459,7 @@ def index(template, indexingdict, dirname):
 	setTextNodes(dic['lastmodifiedth'], dict(gendate=gendate))
 	a = dic['pyndexerref']
 	a.setAttribute('href', a.getAttribute('href') % dict(pyndexer_url=c['pyndexer_url']))
-	setTextNodes(a, dict(pyndexer_ver=version))
+	setTextNodes(a, dict(pyndexer_ver='%d.%d.%d' % version))
 
 	tbodychildrenxml = ''
 	for child in dic['maintablebody'].getElementsByTagName('tr'):
@@ -493,6 +480,21 @@ def index(template, indexingdict, dirname):
 		dic['maintablebody'].removeAttribute('title')
 		delElem(dic['jsenc'])
 		delElem(dic['encryptedrow'])
+
+	readmefile = os.path.join(dirname,c['readme'])
+	###if c['readme'] != '' 
+	if os.path.isfile(readmefile):
+		if os.path.splitext(readmefile)[1].lower() == '.html':
+			readmehtml = minidom.parse(readmefile)
+			readmebody = getElem(readmehtml, 'body')
+			readmebody.tagName = 'div'
+			readmebody.setAttribute('id', 'readme')
+			dic['readme'].replaceChild(readmebody, dic['readme'].childNodes[1])
+		else:
+			readmetext = file(readmefile,'rb').read()
+			dic['readme'].childNodes[0].replaceWholeText(readmetext)
+	else:
+		delElem(dic['readme'])
 
 	# see if we really need to write the new index file.
 	# using md5 to 'compress' info wrote. if the same, no need to rewrite
@@ -530,7 +532,6 @@ if __name__ == "__main__":
 	setlocale(LC_ALL,"")
 	config = ConfigParser.SafeConfigParser()
 	# will use this as startup for my dependencies if not found in same dir as me
-	base_source = "http://dl.dropbox.com/u/552/pyndexer/1.0/"
 	argv = GetArgv()
 
 	mypath = os.path.abspath(os.path.dirname(argv[0]))
@@ -548,22 +549,27 @@ if __name__ == "__main__":
 		print 'Downloading default HTML template...'
 		file(template,'wb').write(urlopen(base_source+'pyndexer.template.html').read())
 
-	dbfolder = GetDbFolder()
-	assert os.path.isdir(dbfolder), Exception('Did not find Dropbox folder, please report')
+	dbfolder = dbconfig.DBConfig().dbfolder
 	publicfolder = os.path.join(dbfolder,'Public'+os.path.sep)
 	config.set('DEFAULT','publicfolder', publicfolder)
 
 	if len(argv) > 1:
-		dirnames = [ os.path.abspath(d) for d in argv[1:] ]
+		dirnames = [ os.path.abspath(d).decode('UTF-8') for d in argv[1:] ]
 	else:
 		# XXX: should open a GUI at some point in the future
 		try:
 			if config.sections():
+				sections = sorted(config.sections())
 				print '\nWill process the following configured folders:'
-				for d in sorted(config.sections()):
+				dirnames = []
+				for d in sections:
 					print d
+					if sys.platform == 'win32':
+						fulld = os.path.join(publicfolder, d.replace('/','\\')).decode('UTF-8')
+					else:
+						fulld = os.path.join(publicfolder, d).decode('UTF-8')
+					dirnames.append(fulld)
 				raw_input('\nPress ^C to cancel, or ENTER to confirm:')
-				dirnames = [ os.path.join(publicfolder, d) for d in sorted(config.sections()) ]
 			else:
 				raw_input('No configured folders found, ENTER to exit:')
 				sys.exit(1)
